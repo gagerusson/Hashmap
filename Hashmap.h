@@ -4,9 +4,9 @@
 #include <list>
 #include <utility>
 #include <exception>
+#include <sstream>
 
 #include "HashmapInterface.h"
-#include "Pair.h"
 
 using namespace std;
 using Bucket = list<pair<string, int>>;
@@ -17,20 +17,31 @@ private:
     int _size;
     Bucket * pairs;
 
-    int _hash(const string &key) const {
-        unsigned char *ptr = (unsigned char *) &key;
-        int sum = 0;
-        for (int i = 0; i < sizeof(key); i++) {
-            sum += ptr[i];
+    int _hash(const string &key, int cap = 0) const {
+        if (cap == 0) {
+            cap = capacity;
         }
-        return sum;
+        char ch[key.length()];
+        key.copy(ch, key.length());
+        int i, sum;
+        for (sum = 0, i = 0; i < key.length(); i++) {
+            sum += ch[i];
+        }
+        return sum % cap;
     }
 
-    void _insert(std::string key, int value) {
+    void _insert(string key, int value) {
         int hashcode = _hash(key);
         int position = hashcode % capacity;
         auto &slot = pairs[position];
+        if (_contains(key)) {
+            remove(key);
+        }
         slot.push_back(pair<string, int>(key, value));
+    }
+
+    double loadFactor() const {
+        return static_cast<double>(_size) / capacity;
     }
 
     void _grow() {
@@ -39,7 +50,7 @@ private:
         for (int i = 0; i < capacity; i++) {
             auto &slot = pairs[i];
             for (auto &pair : slot) {
-                int hashcode = _hash(pair.first);
+                int hashcode = _hash(pair.first, newCapacity);
                 int position = hashcode % newCapacity;
                 auto &newSlot = newPairs[position];
                 newSlot.push_back(pair);
@@ -51,10 +62,12 @@ private:
     }
 
     bool _contains(const std::string &key) const {
-        if (get(key) == -1) {
+        try {
+            _get(key);
+            return true;
+        } catch (invalid_argument &e) {
             return false;
         }
-        return true;
     }
 
     int _get(const std::string &key) const {
@@ -66,7 +79,7 @@ private:
                 return pair.second;
             }
         }
-        return -1;
+        throw invalid_argument("Key not found");
     }
 
     bool _remove(const std::string &key) {
@@ -101,6 +114,9 @@ public:
     void insert(std::string key, int value) override {
         _insert(key, value);
         _size++;
+        if (loadFactor() > MAX_LOAD_FACTOR) {
+            _grow();
+        }
     }
 
     bool contains(const std::string &key) const override {
@@ -120,17 +136,20 @@ public:
                 return pair.second;
             }
         }
-        _insert(key, 0);
-        return slot.back().second;
+        insert(key, 0);
+        return pairs[position].back().second;
     }
 
     bool remove(const std::string &key) override {
-        return _remove(key);
-        _size--;
+        bool is_removed = _remove(key);
+        if (is_removed) _size--;
+        return is_removed;
     }
 
     void clear() override {
-        delete [] pairs;
+        delete[] pairs;
+        pairs = new Bucket[capacity];
+        _size = 0;
     }
 
     int numBuckets() const override {
@@ -140,4 +159,5 @@ public:
     int size() const override {
         return _size;
     }
+
 };
